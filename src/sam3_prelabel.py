@@ -1,7 +1,13 @@
 """Generate snail/tag box proposals for a folder of frames using a local SAM3 checkpoint.
 
 Uses SAM3's text-prompted concept segmentation (Sam3Processor.set_text_prompt) to find
-all instances of "snail" and "tag" per frame, without needing per-frame manual clicks.
+snail instances and individual number-disc instances per frame, without needing
+per-frame manual clicks. Each snail's shell tag is actually a small cluster of several
+single-digit discs (e.g. "1","4","6","3","0" arranged together) -- for training the
+downstream tag-code classifier we want ONE crop covering the whole cluster, not one box
+per digit. So individual digit-disc detections are grouped by which snail's box contains
+them, and collapsed into a single union box per snail before export.
+
 Output is a COCO-format JSON (one file covering all frames) suitable for uploading to
 Roboflow as pre-annotations ahead of human correction.
 
@@ -28,17 +34,67 @@ CHECKPOINT = PROJECT_ROOT / "weights" / "sam3_image" / "sam3.pt"
 
 sys.path.insert(0, str(SAM3_REPO))
 
+SNAIL_CAT_ID = 1
+TAG_CAT_ID = 2
 CATEGORIES = [
-    {"id": 1, "name": "snail"},
-    {"id": 2, "name": "tag"},
+    {"id": SNAIL_CAT_ID, "name": "snail"},
+    {"id": TAG_CAT_ID, "name": "tag"},
 ]
 
 # Text prompts fed to SAM3's promptable concept segmentation -- one pass per
 # concept per frame, since snail/tag count and position varies frame to frame.
 PROMPTS = {
-    1: "snail",
-    2: "small white circular disc with printed digits glued to a snail's shell",
+    SNAIL_CAT_ID: "snail",
+    TAG_CAT_ID: "small white circular disc with a printed digit, part of a numbered tag glued to a snail's shell",
 }
+
+
+def box_center(box):
+    x0, y0, x1, y1 = box
+    return (x0 + x1) / 2, (y0 + y1) / 2
+
+
+def box_contains_point(box, point, pad=10):
+    x0, y0, x1, y1 = box
+    px, py = point
+    return (x0 - pad) <= px <= (x1 + pad) and (y0 - pad) <= py <= (y1 + pad)
+
+
+def union_box(boxes):
+    xs0 = [b[0] for b in boxes]
+    ys0 = [b[1] for b in boxes]
+    xs1 = [b[2] for b in boxes]
+    ys1 = [b[3] for b in boxes]
+    return min(xs0), min(ys0), max(xs1), max(ys1)
+
+
+def group_digits_into_tags(snail_boxes, digit_boxes_scores):
+    """Assign each digit-disc box to the snail box that contains its center
+    (within a small padding, since discs can sit slightly over the shell
+    edge), then collapse each snail's assigned digits into one union box.
+    Digits that don't fall inside any snail box are dropped as likely false
+    positives (e.g. grass texture) rather than emitted as spurious tags.
+    """
+    assigned = [[] for _ in snail_boxes]
+    for box, score in digit_boxes_scores:
+        center = box_center(box)
+        best_idx, best_area = None, None
+        for i, sbox in enumerate(snail_boxes):
+            if box_contains_point(sbox, center):
+                area = (sbox[2] - sbox[0]) * (sbox[3] - sbox[1])
+                if best_area is None or area < best_area:
+                    best_idx, best_area = i, area
+        if best_idx is not None:
+            assigned[best_idx].append((box, score))
+
+    tag_boxes_scores = []
+    for digits in assigned:
+        if not digits:
+            continue
+        boxes = [d[0] for d in digits]
+        scores = [d[1] for d in digits]
+        tag_boxes_scores.append((union_box(boxes), sum(scores) / len(scores)))
+    return tag_boxes_scores
 
 
 def build_processor(confidence_threshold: float):
@@ -88,35 +144,62 @@ def run(frames_dir: Path, out_path: Path, score_thresh: float = 0.5, nms_iou: fl
 
         base_state = processor.set_image(image)
 
+        per_category_boxes = {}
         for cat_id, prompt in PROMPTS.items():
             state = processor.set_text_prompt(prompt, dict(base_state))
             boxes = state.get("boxes")
             scores = state.get("scores")
             if boxes is None or len(boxes) == 0:
+                per_category_boxes[cat_id] = []
+                processor.reset_all_prompts(state)
                 continue
             # SAM3 doesn't dedupe its own candidate proposals -- without NMS,
-            # a single physical tag/snail produces several overlapping boxes
-            # of slightly different sizes, which is noise for a human
-            # correcting these afterward rather than a time save.
+            # a single physical snail/digit produces several overlapping boxes
+            # of slightly different sizes, which is noise rather than a time
+            # save for whoever corrects these afterward.
             boxes_f = boxes.float().cpu()
             scores_f = scores.float().cpu()
             keep = nms(boxes_f, scores_f, iou_threshold=nms_iou)
+            kept = []
             for idx in keep.tolist():
                 x0, y0, x1, y1 = [float(v) for v in boxes_f[idx].tolist()]
-                bw, bh = x1 - x0, y1 - y0
-                if bw <= 0 or bh <= 0:
+                if (x1 - x0) <= 0 or (y1 - y0) <= 0:
                     continue
-                annotations.append({
-                    "id": ann_id,
-                    "image_id": img_id,
-                    "category_id": cat_id,
-                    "bbox": [x0, y0, bw, bh],
-                    "area": bw * bh,
-                    "iscrowd": 0,
-                    "score": float(scores_f[idx]),
-                })
-                ann_id += 1
+                kept.append(((x0, y0, x1, y1), float(scores_f[idx])))
+            per_category_boxes[cat_id] = kept
             processor.reset_all_prompts(state)
+
+        snail_boxes = [b for b, _ in per_category_boxes.get(SNAIL_CAT_ID, [])]
+        digit_boxes_scores = per_category_boxes.get(TAG_CAT_ID, [])
+
+        for box, score in per_category_boxes.get(SNAIL_CAT_ID, []):
+            x0, y0, x1, y1 = box
+            annotations.append({
+                "id": ann_id,
+                "image_id": img_id,
+                "category_id": SNAIL_CAT_ID,
+                "bbox": [x0, y0, x1 - x0, y1 - y0],
+                "area": (x1 - x0) * (y1 - y0),
+                "iscrowd": 0,
+                "score": score,
+            })
+            ann_id += 1
+
+        # Collapse each snail's individual digit-disc detections into one
+        # union box -- that single crop is what the downstream tag-code
+        # classifier will be trained on, not per-digit crops.
+        for box, score in group_digits_into_tags(snail_boxes, digit_boxes_scores):
+            x0, y0, x1, y1 = box
+            annotations.append({
+                "id": ann_id,
+                "image_id": img_id,
+                "category_id": TAG_CAT_ID,
+                "bbox": [x0, y0, x1 - x0, y1 - y0],
+                "area": (x1 - x0) * (y1 - y0),
+                "iscrowd": 0,
+                "score": score,
+            })
+            ann_id += 1
 
         if img_id % 10 == 0:
             if torch.cuda.is_available():
