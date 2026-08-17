@@ -1,0 +1,24 @@
+# Raw and intermediate data (too large / regenerable)
+data/raw/
+data/frames/
+data/cvat_exports/
+
+# Rendered outputs (large video files)
+outputs/*.mp4
+outputs/*.avi
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.ipynb_checkpoints/
+
+# SAM3 checkpoints (downloaded, not project-owned)
+weights/sam3*
+
+# Third-party cloned repos (SAM3 inference code, not project-owned)
+third_party/
+
+# OS cruft
+.DS_Store
+Thumbs.db
