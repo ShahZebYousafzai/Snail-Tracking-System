@@ -1,7 +1,7 @@
 # Raw and intermediate data (too large / regenerable)
 data/raw/
 data/frames/
-data/cvat_exports/
+data/roboflow_exports/
 
 # Rendered outputs (large video files)
 outputs/*.mp4
@@ -18,6 +18,9 @@ weights/sam3*
 
 # Third-party cloned repos (SAM3 inference code, not project-owned)
 third_party/
+
+# Secrets
+.env
 
 # OS cruft
 .DS_Store
