@@ -40,6 +40,7 @@ def main() -> None:
     parser.add_argument("--coco-json", type=Path, default=PROJECT_ROOT / "data" / "roboflow_exports" / "sam3_prelabels.json")
     parser.add_argument("--project", default="snail-tracking-azwre")
     parser.add_argument("--staging-dir", type=Path, default=PROJECT_ROOT / "data" / "roboflow_exports" / "_upload_staging")
+    parser.add_argument("--split", default="train", choices=["train", "valid", "test"])
     args = parser.parse_args()
 
     from roboflow import Roboflow
@@ -56,6 +57,7 @@ def main() -> None:
         project_name=args.project,
         project_type="object-detection",
         is_prediction=True,
+        split=args.split,
     )
     print("Upload complete.")
 
