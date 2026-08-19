@@ -2,6 +2,15 @@
 data/raw/
 data/frames/
 data/roboflow_exports/
+data.rar
+
+# Training run artifacts (regenerable; only best.pt copied to weights/ is kept)
+runs/
+
+# Pretrained base checkpoints (downloaded, not project-owned)
+/yolo26n.pt
+/yolo26s.pt
+/rtdetr-l.pt
 
 # Rendered outputs (large video files)
 outputs/*.mp4
