@@ -1,0 +1,6 @@
+crop_path,video,frame,tag_idx,bead_idx,sam3_score
+data\bead_crops\from_video_dedup\C0023_frame000950_tag3_bead4.jpg,C0023.MP4,950,3,4,0.8203
+data\bead_crops\from_video_dedup\C0023_frame000975_tag2_bead4.jpg,C0023.MP4,975,2,4,0.707
+data\bead_crops\from_video_dedup\C0023_frame001000_tag3_bead4.jpg,C0023.MP4,1000,3,4,0.8516
+data\bead_crops\from_video_dedup\C0023_frame001375_tag3_bead4.jpg,C0023.MP4,1375,3,4,0.8125
+data\bead_crops\from_video_dedup\C0023_frame001025_tag2_bead4.jpg,C0023.MP4,1025,2,4,0.8008

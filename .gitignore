@@ -25,6 +25,10 @@ __pycache__/
 # SAM3 checkpoints (downloaded, not project-owned)
 weights/sam3*
 
+# images
+*.jpg
+*.png
+
 # Third-party cloned repos (SAM3 inference code, not project-owned)
 third_party/
 
