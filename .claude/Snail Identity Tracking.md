@@ -90,6 +90,8 @@ Every CSV/JSON row carries `frame, track_id, snail_code, x, y, w, h, state, tag_
 - **Visually similar shells → ID swap on close pass** → N-consecutive-read re-confirmation + `possible_swap` event detection surfaces suspected swaps rather than trusting proximity alone.
 - **6 GB VRAM limits** → conservative batch sizes (8-16 at 640px for yolov8n/s), monitor `nvidia-smi` on first training run; use the smallest available SAM3 checkpoint and run it as a separate one-off pre-labeling pass (not concurrently with YOLO training) so it doesn't compete for VRAM.
 - **SAM3 mask quality on small/thin objects** (the tag disc is small, snails can be low-contrast against the textured background) → treat SAM3 output as a time-saving first draft only, not ground truth; human review in CVAT is still mandatory before export, budgeted explicitly into Day 2-3 rather than assumed to be zero-effort.
+- **6/9 digit-bead ambiguity** (visually identical under 180° rotation on the current white beads) → print 6 and 9 in different colors on any future physical tag/bead revision so the two remain distinguishable at any on-screen rotation; doesn't help the existing white-bead video, which still needs a manual spot-check for 6/9 mislabels (see TODO.md).
+- **Bead rotation labels currently unusable** → `manual_labels.csv` has `rotation_deg == 0` for all 2,742 digit-labeled rows (rotation was never adjusted during labeling), so the two-head classifier's rotation head is training against a constant target and learning nothing; needs a relabeling pass before that head is trusted (see TODO.md).
 
 ## Verification
 
